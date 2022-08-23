@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		}
+	],
+	"settings": {
+		"gens.path": "C:\\Games\\Gens\\gens.exe",
+		"GDK": "%GDK_WIN%",
+		"files.associations": {
+			"genesis.h": "c"
+		}
+	}
+}

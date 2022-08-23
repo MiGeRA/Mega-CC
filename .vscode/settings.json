@@ -1,0 +1,13 @@
+{
+    "C_Cpp.default.includePath": [
+        "${env:GDK}\\inc",
+        "${env:GDK}\\res",
+        "res",
+        "inc"
+    ],
+    "gens.path": "C:\\Games\\Gens\\gens.exe",
+    "GDK": "%GDK_WIN%",
+    "files.associations": {
+        "genesis.h": "c"
+    }
+}
