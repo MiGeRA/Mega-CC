@@ -1,3 +1,4 @@
+#include "genesis.h"
 #include "hexout.h"
 
 void printhex8(u8 buff, u8 dig, u8 x, u8 y)

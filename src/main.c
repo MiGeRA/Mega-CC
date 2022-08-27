@@ -1,4 +1,5 @@
 #include <genesis.h>
+#include "ccram.h"
 #include "hexout.h"
 #include "font.h"
 
@@ -6,19 +7,7 @@ static void Print_Code_Table(u8 x, u8 y);
 static void Print_Cursor_Position();
 static void Reprint_Cursor();
 static void ever_VInt();
-static u8 CC_RAM_Init();
-
-//#define RAMFUNC __attribute__((longcall, section(".data")))
-//#define RAMFUNC __attribute__((longcall, section(".ramfunc")))
-
-//__attribute__((section(".data")))
-// void subroutine_name (void) __attribute__((section(".ramfunc")));
-
-/*
-RAMFUNC void testfunc_name(void)
-{
-}
-*/
+static u8 CCRAM_Init();
 
 // Params section
 #define maxcode 10 // max quantity codes
@@ -37,10 +26,13 @@ u8 ym = 0; // y-position of menu cursor
 u32 tick = 0; // growing counter
 u8 mask = 0;  // time period flag
 
-// u16 *address;           // for debug
-// u16 datbuff;            // for debug
+u16 flashIdent;
+u16 flashMfg;
 
-void Joy_Handler(u16 joy, u16 changed, u16 state)
+u16 *address;
+// u16 datbuff;  // for debug
+
+void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16 joy, u16 changed, u16 state)
 {
     if (joy == JOY_1)
     {
@@ -65,7 +57,14 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
             Print_Code_Table(posx, posy);
         }
 
-        if (state & BUTTON_A)
+        if ((BUTTON_A | BUTTON_B) == (state & (BUTTON_A | BUTTON_B)))
+        {
+            tbladdr[ym] = 0;
+            tbldata[ym] = 0;
+            tblstat[ym] = 0;
+            Print_Code_Table(posx, posy);
+        }
+        else if (state & BUTTON_A)
         {
             if (xm < 4)
                 tbladdr[ym] = tbladdr[ym] + (0x1000 >> (xm * 4));
@@ -74,7 +73,7 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
             tblstat[ym] = 0xFF;
             Print_Code_Table(posx, posy);
         }
-        if (state & BUTTON_B)
+        else if (state & BUTTON_B)
         {
             if (xm < 4)
                 tbladdr[ym] = tbladdr[ym] - (0x1000 >> (xm * 4));
@@ -83,6 +82,7 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
             tblstat[ym] = 0xFF;
             Print_Code_Table(posx, posy);
         }
+
         if (state & BUTTON_C)
         {
             tblstat[ym] = tblstat[ym] ? 0 : 0xFF;
@@ -106,18 +106,16 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
             *(u8 *)(0x08000B) = 0x00;
             */
 
-            ccramwr(0, 0); // start byte - null codes quantity
-            for (u8 i = 0; i < maxcode; i++)
-                if (tblstat[i])
-                    ccramwr(0, 1); // start byte - not null codes quantity
+            *(u8 *)(0x080001) = 200; // start delay on quantity of VInt, 1 - w/o delay
 
             u8 ramcnt = 1; // init value CC-RAM counter
 
-            // Fill CC-RAM
+            // Filling CC-RAM of actual codes
             for (u8 i = 0; i < maxcode; i++)
             {
                 if (tblstat[i])
                 {
+                    /*
                     ccramwr(ramcnt, tblstat[i]); // primus adrress byte - 0xFF if code actived
                     ramcnt++;
                     ccramwr(ramcnt, (u8)((tbladdr[i] & 0xFF00) >> 8)); // hi address byte
@@ -126,14 +124,22 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
                     ramcnt++;
                     ccramwr(ramcnt, tbldata[i]); // data byte
                     ramcnt++;
+                    */
+                    CCRAM_u8_wr(ramcnt, tblstat[i]); // primus adrress byte - 0xFF if code actived
+                    ramcnt++;
+                    CCRAM_u16_wr(ramcnt, tbladdr[i]); // address word
+                    ramcnt++;
+                    ramcnt++;
+                    CCRAM_u8_wr(ramcnt, tbldata[i]); // data byte
+                    ramcnt++;
                 }
             }
 
-            // Setting runned in-slot Cart flag
-            *(u8 *)(0x088FFF) = 0xA5;
+            // Setting runned in-slot Cart flag (last byte of Mega-CC RAM)
+            *(u8 *)(0x088FFF) = 0xCC; // see value in sega.s
 
             // Switch mapper to in-slot Cart
-            *(u8 *)(0x3FFFFF) = 0xA5;
+            *(u8 *)(0x3FFFFF) = 0xCC; // any random value
 
             // Switch mapper to in-slot cart - alt variant
             /*
@@ -149,6 +155,32 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
     }
 }
 
+void __attribute__((noinline, used, longcall, section(".data"))) getMfg() // In-RAM function
+{
+    SYS_disableInts();
+    Z80_requestBus(TRUE);
+
+    *address = 0x0090;
+    flashMfg = *address;
+    *address = 0x00FF;
+
+    Z80_releaseBus();
+    SYS_enableInts();
+}
+
+void __attribute__((noinline, used, longcall, section(".data"))) getIdent() // In-RAM function
+{
+    SYS_disableInts();
+    Z80_requestBus(TRUE);
+
+    *address = 0x0090;
+    flashIdent = *address;
+    *address = 0x00FF;
+
+    Z80_releaseBus();
+    SYS_enableInts();
+}
+
 int main(bool hardReset)
 {
     /*
@@ -159,7 +191,7 @@ int main(bool hardReset)
 
     JOY_init();
     JOY_setEventHandler(&Joy_Handler);
-    SYS_setVIntCallback(ever_VInt);
+    // SYS_setVIntCallback(ever_VInt);
 
     VDP_setScreenWidth320();
     VDP_setHInterrupt(0);
@@ -171,16 +203,17 @@ int main(bool hardReset)
     VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
     // VDP_setPalette(PAL0, custom_font.palette->data); // ... and set the pallete from font file
 
-    VDP_drawText("MEGA-CC OSP: VERSION 1.0", 0, 0);
+    VDP_drawText("MEGA-CC OSP: VERSION 1.1", 0, 0);
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
-    if (!CC_RAM_Init())
+    if (!CCRAM_Init())
         VDP_drawText("CHECKED    ", 13, 1);
     else
         VDP_drawText("WITH ERRORS", 13, 1);
 
-    VDP_drawText("READY ... ", 0, 2);
+    VDP_drawText("READY ... ", 0, 3);
+
     VDP_drawText("MEGA CODE CRACKER", 10, 7);
     VDP_drawText("OPEN SOURCE PROJECT", 9, 8);
 
@@ -190,6 +223,30 @@ int main(bool hardReset)
     VDP_drawText("A - ABOVE, B - BELLOW, C - CHOOSE CHANGE", 0, 24);
     VDP_drawText("START - TO RUN PROGRAM FROM IN-SLOT CART", 0, 25);
     VDP_drawText("@ 2022 - WITH LOVE FROM RUSSIA BY MIGERA", 0, 27);
+
+    address = 0x000000;
+    getMfg();
+    address = 0x000002;
+    getIdent();
+
+    VDP_drawText("MEGA-CC ROM: ", 0, 2);
+    if (flashMfg == 0x0089)
+    {
+        if (flashIdent == 0x4470)
+            VDP_drawText("PA28F400-T", 13, 2);
+        else if (flashIdent == 0x4471)
+            VDP_drawText("PA28F400-B", 13, 2);
+        else if (flashIdent == 0x2274)
+            VDP_drawText("PA28F200-T", 13, 2);
+        else if (flashIdent == 0x2275)
+            VDP_drawText("PA28F200-B", 13, 2);
+    }
+    else
+    {
+        VDP_drawText("UNSUPPORTED", 13, 2);
+        printhex16(flashMfg, 4, 25, 2);
+        printhex16(flashIdent, 4, 30, 2);
+    }
 
     // Program name in header
     /*
@@ -285,7 +342,7 @@ void Reprint_Cursor()
             printhex8(tbldata[ym], 2, posx + 7, posy + ym);
     }
 }
-
+/*
 u8 ccramrd(u16 addr)
 {
     return (*(u8 *)(0x080000 + addr * 2 + 1));
@@ -295,8 +352,8 @@ void ccramwr(u16 addr, u8 data)
 {
     *(u8 *)(0x080000 + addr * 2 + 1) = data;
 }
-
-u8 CC_RAM_Init()
+*/
+u8 CCRAM_Init()
 {
     u8 err = 0;
 
@@ -342,18 +399,18 @@ u8 CC_RAM_Init()
 
     // Variant 3- It looks not bad, but the speed may not be the best
     for (u16 i = 0; i < 32768; i++)
-        ccramwr(i, 0x5A);
+        CCRAM_u8_wr(i, 0x5A);
     for (u16 i = 0; i < 32768; i++)
-        if (ccramrd(i) != 0x5A)
+        if (CCRAM_u8_rd(i) != 0x5A)
             err++;
 
     if (err)
         return (err);
 
     for (u16 i = 0; i < 32768; i++)
-        ccramwr(i, 0);
+        CCRAM_u8_wr(i, 0);
     for (u16 i = 0; i < 32768; i++)
-        if (ccramrd(i) != 0)
+        if (CCRAM_u8_rd(i) != 0)
             err++;
 
     return (err);

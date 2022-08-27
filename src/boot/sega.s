@@ -46,7 +46,7 @@ rom_header:
         .incbin "out/rom_head.bin", 0x10, 0x100
 
 _Entry_Point:
-        move    #0x2700,%sr
+        move    #0x2700, %sr
         move.b	#0, 0x088FFF                /* cleaning flag */
 
         tst.l   0xa10008
@@ -95,22 +95,22 @@ Table:
 *------------------------------------------------
 
 registersDump:
-        move.l %d0,registerState+0
-        move.l %d1,registerState+4
-        move.l %d2,registerState+8
-        move.l %d3,registerState+12
-        move.l %d4,registerState+16
-        move.l %d5,registerState+20
-        move.l %d6,registerState+24
-        move.l %d7,registerState+28
-        move.l %a0,registerState+32
-        move.l %a1,registerState+36
-        move.l %a2,registerState+40
-        move.l %a3,registerState+44
-        move.l %a4,registerState+48
-        move.l %a5,registerState+52
-        move.l %a6,registerState+56
-        move.l %a7,registerState+60
+        move.l %d0, registerState+0
+        move.l %d1, registerState+4
+        move.l %d2, registerState+8
+        move.l %d3, registerState+12
+        move.l %d4, registerState+16
+        move.l %d5, registerState+20
+        move.l %d6, registerState+24
+        move.l %d7, registerState+28
+        move.l %a0, registerState+32
+        move.l %a1, registerState+36
+        move.l %a2, registerState+40
+        move.l %a3, registerState+44
+        move.l %a4, registerState+48
+        move.l %a5, registerState+52
+        move.l %a6, registerState+56
+        move.l %a7, registerState+60
         rts
 
 busAddressErrorDump:
@@ -236,46 +236,48 @@ _HINT:
         rte
 
 _VINT:
-        movem.l %d0-%d1/%a0-%a1, -(%sp)
+        cmpi.b  #0xCC, 0x088FFF
+        bne.s   _next_init_cc
 
-        move.b  0x088FFF, %d0
-        sub.b   #0xA5, %d0
-        tst.b   %d0
-        bne.s   _next_init
+        movem.l %d0-%d1/%a0-%a1, -(%sp)
+        move    %sr, %d1
+        move    #0x2700, %sr
 
         move.w	#0x0100, 0xA11100                                
-        move.w  #0x0100, 0xA11200                                
+        move.w  #0x0100, 0xA11200           /* It too need! - for best compatibility with damn poor soft */                     
 _wait_stop:
         btst.b	#0, 0xA11100                                    
         bne.s	_wait_stop
                                                          
-        move.l  #0x00080001, %a0
-        moveq   #2, %d1
+        move.l  #0x080001, %a0
+        subi.b  #1, (%a0)
         tst.b   (%a0)
-        beq.s   _back_to_game
-        add.l   %d1, %a0
+        bne.s   _back_to_game
+        addi.b  #1, (%a0)
+        addq.l  #2, %a0
 _next_code:
-        clr.l   %d0
+        moveq   #0, %d0
         move.b  (%a0), %d0
-        add.l   %d1, %a0
+        addq.l  #2, %a0
         asl.l   #8, %d0
         move.b  (%a0), %d0
-        add.l   %d1, %a0
+        addq.l  #2, %a0
         asl.l   #8, %d0
         move.b  (%a0), %d0
-        add.l   %d1, %a0
+        addq.l  #2, %a0
         move.l  %d0, %a1
         move.b  (%a0), (%a1)
-        add.l   %d1,%a0
+        addq.l  #2, %a0
         tst.b   (%a0)
         bne.s   _next_code
-
 _back_to_game:       
-        move.w  #0, 0xA11100                                    
+        move.w  #0x000, 0xA11100
+        move    %d1, %sr
         movem.l (%sp)+, %d0-%d1/%a0-%a1
         jmp     0x00000076
 
-_next_init:
+_next_init_cc:
+        movem.l %d0-%d7/%a0-%a6, -(%sp)
         ori.w   #0x0001, intTrace           /* in V-Int */
         addq.l  #1, vtimer                  /* increment frame counter (more a vint counter) */
         btst    #3, VBlankProcess+1         /* PROCESS_XGM_TASK ? (use VBlankProcess+1 as btst is a byte operation) */
@@ -293,5 +295,5 @@ _no_bmp_task:
         move.l  vintCB, %a0                 /* load user callback */
         jsr    (%a0)                        /* call user callback */
         andi.w  #0xFFFE, intTrace           /* out V-Int */
-        movem.l (%sp)+, %d0-%d1/%a0-%a1
+        movem.l (%sp)+, %d0-%d7/%a0-%a6
         rte
