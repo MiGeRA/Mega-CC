@@ -10,11 +10,12 @@ static void ever_VInt();
 static u8 CCRAM_Init();
 
 // Params section
+
 #define maxcode 10 // max quantity codes
 #define posx 12    // offset on screen for print codetable
-#define posy 10    // offset on screen for print codetable
+#define posy 9     // offset on screen for print codetable
 
-// Declarations section
+// Declarations section - Global variable
 
 u16 tbladdr[maxcode]; // array of address part of "code"
 u8 tbldata[maxcode];  // array of data part of "code"
@@ -23,19 +24,38 @@ u8 tblstat[maxcode];  // array of status part of "code" and primus byte of addre
 u8 xm = 0; // x-position of menu cursor
 u8 ym = 0; // y-position of menu cursor
 
-u32 tick = 0; // growing counter
-u8 mask = 0;  // time period flag
+u32 tick = 0;    // growing counter
+u8 mask = 0;     // time period flag
+u8 writable = 0; // flash-ROM presence flag
 
-u16 flashIdent;
-u16 flashMfg;
+u16 flashMfg;   // flash-ROM manufacturer code
+u16 flashIdent; // flash-ROM device codeF
 
-u16 *address;
-// u16 datbuff;  // for debug
+u16 *address; // pointer for data cell
+u8 *control;  // pointer for control reg. cell
+u8 status;    // variable for use taked status byte
+
+u16 datbuff; // for debug
 
 void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16 joy, u16 changed, u16 state)
 {
     if (joy == JOY_1)
     {
+        if (writable & ((BUTTON_DIR) == (state & (BUTTON_DIR))))
+        {
+            VDP_drawText("WRITING ... ", 0, 4);
+            Backup_Save();
+            if (status & 0x20)
+                VDP_drawText("ERASE ERROR!", 0, 4);
+            else if (status & 0x10)
+                VDP_drawText("WRITE ERROR!", 0, 4);
+            else if (status & 0x08)
+                VDP_drawText("VPP TOO LOW!", 0, 4);
+            else
+                VDP_drawText("OK!         ", 0, 4);
+            Backup_Load();
+            Print_Code_Table(posx, posy);
+        }
         if (state & BUTTON_UP)
         {
             ym = ym == 0 ? maxcode - 1 : ym - 1;
@@ -116,6 +136,7 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
                 if (tblstat[i])
                 {
                     /*
+                    // Pure C-code outdated construction - use in 1-st edition
                     ccramwr(ramcnt, tblstat[i]); // primus adrress byte - 0xFF if code actived
                     ramcnt++;
                     ccramwr(ramcnt, (u8)((tbladdr[i] & 0xFF00) >> 8)); // hi address byte
@@ -136,7 +157,7 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
             }
 
             // Setting runned in-slot Cart flag (last byte of Mega-CC RAM)
-            *(u8 *)(0x088FFF) = 0xCC; // see value in sega.s
+            *(u8 *)(0x08FFFF) = 0xCC; // see value in sega.s
 
             // Switch mapper to in-slot Cart
             *(u8 *)(0x3FFFFF) = 0xCC; // any random value
@@ -181,14 +202,105 @@ void __attribute__((noinline, used, longcall, section(".data"))) getIdent() // I
     SYS_enableInts();
 }
 
+void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() // In-RAM function
+{
+    SYS_disableInts();
+    Z80_requestBus(TRUE);
+
+    address = 0x020000; // first address of BLOCK to erase|write
+    control = 0x020001; // low part of this BLOCK for get status-flag
+
+    *control = 0x20; // 1-st ctrl byte for erase init
+    *control = 0xD0; // 2-nd ctrl byte for erase init
+    status = *control;
+    status = status & 0x80;
+    while (status == 0) // wait until completed ...
+    {
+        status = *control;
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x20)
+            break; // Erase error
+        status = status & 0x80;
+    }
+    *control = 0xFF;
+
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(address + i * 2) = 0x0040; // ctrl byte for write word
+        *(address + i * 2) = tbladdr[i];
+        status = *control;
+        status = status & 0x80;
+        while (status == 0)
+        {
+            status = *control;
+            if (status & 0x08)
+                break; // Vpp is too low
+            if (status & 0x10)
+                break; // Write error
+            status = status & 0x80;
+        }
+    }
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(maxcode * 2 + address + i * 2) = 0x0040;
+        *(maxcode * 2 + address + i * 2) = tbldata[i];
+        status = *control;
+        status = status & 0x80;
+        while (status == 0)
+        {
+            status = *control;
+            if (status & 0x08)
+                break;
+            if (status & 0x10)
+                break;
+            status = status & 0x80;
+        }
+    }
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(maxcode * 3 + address + i * 2) = 0x0040;
+        *(maxcode * 3 + address + i * 2) = tblstat[i];
+        status = *control;
+        status = status & 0x80;
+        while (status == 0)
+        {
+            status = *control;
+            if (status & 0x08)
+                break;
+            if (status & 0x10)
+                break;
+            status = status & 0x80;
+        }
+    }
+    *control = 0xFF;
+
+    Z80_releaseBus();
+    SYS_enableInts();
+}
+
+void Backup_Load()
+{
+    address = 0x020000;
+
+    for (u32 i = 0; i < maxcode * 3; i++)
+    {
+        if (*(address + i * 2) != 0xFFFF) // Check area for cleanliness
+        {
+            // If exist data - load it
+            for (u32 i = 0; i < maxcode; i++)
+                tbladdr[i] = *(address + i * 2);
+            for (u32 i = 0; i < maxcode; i++)
+                tbldata[i] = (u8) * (maxcode * 2 + address + i * 2);
+            for (u32 i = 0; i < maxcode; i++)
+                tblstat[i] = (u8) * (maxcode * 3 + address + i * 2);
+            break;
+        }
+    }
+}
+
 int main(bool hardReset)
 {
-    /*
-    for (u8 i = 0; i < sizeof(tbladdr); i++) tbladdr[i] = 0;
-    for (u8 i = 0; i < sizeof(tbldata); i++) tbldata[i] = 0;
-    for (u8 i = 0; i < sizeof(tblstat); i++) tblstat[i] = 0;
-    */
-
     JOY_init();
     JOY_setEventHandler(&Joy_Handler);
     // SYS_setVIntCallback(ever_VInt);
@@ -203,7 +315,7 @@ int main(bool hardReset)
     VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
     // VDP_setPalette(PAL0, custom_font.palette->data); // ... and set the pallete from font file
 
-    VDP_drawText("MEGA-CC OSP: VERSION 1.1", 0, 0);
+    VDP_drawText("MEGA-CC OSP: VERSION 1.2", 0, 0);
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
@@ -212,26 +324,16 @@ int main(bool hardReset)
     else
         VDP_drawText("WITH ERRORS", 13, 1);
 
-    VDP_drawText("READY ... ", 0, 3);
-
-    VDP_drawText("MEGA CODE CRACKER", 10, 7);
-    VDP_drawText("OPEN SOURCE PROJECT", 9, 8);
-
-    Print_Code_Table(posx, posy);
-
-    VDP_drawText("USE D-PAD NAVIGATION AND NEXT KEYS FOR:", 0, 23);
-    VDP_drawText("A - ABOVE, B - BELLOW, C - CHOOSE CHANGE", 0, 24);
-    VDP_drawText("START - TO RUN PROGRAM FROM IN-SLOT CART", 0, 25);
-    VDP_drawText("@ 2022 - WITH LOVE FROM RUSSIA BY MIGERA", 0, 27);
+    VDP_drawText("MEGA-CC ROM: ", 0, 2);
 
     address = 0x000000;
     getMfg();
     address = 0x000002;
     getIdent();
 
-    VDP_drawText("MEGA-CC ROM: ", 0, 2);
     if (flashMfg == 0x0089)
     {
+        writable = 1;
         if (flashIdent == 0x4470)
             VDP_drawText("PA28F400-T", 13, 2);
         else if (flashIdent == 0x4471)
@@ -240,39 +342,65 @@ int main(bool hardReset)
             VDP_drawText("PA28F200-T", 13, 2);
         else if (flashIdent == 0x2275)
             VDP_drawText("PA28F200-B", 13, 2);
+        else
+            writable = 0;
     }
     else
     {
+        writable = 0;
         VDP_drawText("UNSUPPORTED", 13, 2);
         printhex16(flashMfg, 4, 25, 2);
         printhex16(flashIdent, 4, 30, 2);
     }
 
-    // Program name in header
+    VDP_drawText("READY ... ", 0, 3);
+    VDP_drawText("MEGA CODE CRACKER", 10, 6);
+    VDP_drawText("OPEN SOURCE PROJECT", 9, 7);
+
+    Backup_Load();
+    Print_Code_Table(posx, posy);
+
+    VDP_drawText("USE D-PAD NAVIGATION AND NEXT KEYS FOR:", 0, 20);
+    VDP_drawText("A - ABOVE, B - BELLOW, C - CHOOSE CHANGE", 0, 22);
+    VDP_drawText("START - TO RUN PROGRAM FROM IN-SLOT CART", 0, 23);
+    if (writable)
+    {
+        VDP_drawText("CENTER D-PAD - TO SAVE CODE-TABLE IN R0M", 0, 24);
+        VDP_drawText("A + B - TO CLEAN CURRENT STRING OF CODE", 0, 25);
+    }
+    else
+        VDP_drawText("A + B - TO CLEAN CURRENT STRING OF CODE", 0, 24);
+    VDP_drawText("@ 2022 - WITH LOVE FROM RUSSIA BY MIGERA", 0, 27);
+
+    // Program name in header - debug feature
     /*
     char str[32];
+
     for (u8 i = 0; i < 32; i++) str[i] = *(u8 *)(0x150 + i);
-    VDP_drawText(str, 0, 14);
+    VDP_drawText(str, 0, 4);
+
     for (u8 i = 0; i < 32; i++) str[i] = *(u8 *)(0x400150 + i);
-    VDP_drawText(str, 0, 15);
+    VDP_drawText(str, 0, 5);
     */
 
     // Test address space
     /*
+    VDP_drawText("DEBUG INFO: ", posx + 14, posy);
+
     address = 0x000100;
     datbuff = *address;
-    printhex32z((u32)address, 6, 0, 4);
-    printhex16(datbuff, 4, 9, 4);
+    printhex32z((u32)address, 6, posx + 14, posy + 2);
+    printhex16(datbuff, 4, posx + 14 + 9, posy + 2);
 
     address = 0x100100;
     datbuff = *address;
-    printhex32z((u32)address, 6, 0, 5);
-    printhex16(datbuff, 4, 9, 5);
+    printhex32z((u32)address, 6, posx + 14, posy + 3);
+    printhex16(datbuff, 4, posx + 14 + 9, posy + 3);
 
     address = 0x400100;
     datbuff = *address;
-    printhex32z((u32)address, 6, 0, 6);
-    printhex16(datbuff, 4, 9, 6);
+    printhex32z((u32)address, 6, posx + 14, posy + 4);
+    printhex16(datbuff, 4, posx + 14 + 9, posy + 4);
     */
 
     while (TRUE)
@@ -281,9 +409,7 @@ int main(bool hardReset)
             mask = !mask; // revert every period ...
 
         // Print_Cursor_Position(); // for debug - print cursor position in korner
-
-        Reprint_Cursor(); // cursor animation
-
+        Reprint_Cursor();      // cursor animation
         SYS_doVBlankProcess(); // always call this method at the end of the frame
     }
 
@@ -297,7 +423,7 @@ void ever_VInt()
     // SYS_disableInts();
     // Z80_requestBus(TRUE);
 
-    // Put here anything ...
+    // Put here anything ... if this activated ;-)
 
     // Z80_releaseBus();
     // SYS_enableInts();
@@ -319,7 +445,7 @@ void Print_Code_Table(u8 x, u8 y)
     }
 }
 
-void Print_Cursor_Position()
+void Print_Cursor_Position() // debug feature
 {
     printhex8(xm, 2, 36, 0);
     printhex8(ym, 2, 38, 0);
@@ -343,12 +469,12 @@ void Reprint_Cursor()
     }
 }
 /*
-u8 ccramrd(u16 addr)
+u8 ccramrd(u16 addr) // Pure C-code outdated construction - use in 1-st edition
 {
     return (*(u8 *)(0x080000 + addr * 2 + 1));
 }
 
-void ccramwr(u16 addr, u8 data)
+void ccramwr(u16 addr, u8 data) // Pure C-code outdated construction - use in 1-st edition
 {
     *(u8 *)(0x080000 + addr * 2 + 1) = data;
 }

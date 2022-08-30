@@ -47,7 +47,7 @@ rom_header:
 
 _Entry_Point:
         move    #0x2700, %sr
-        move.b	#0, 0x088FFF                /* cleaning flag */
+        move.b	#0, 0x08FFFF                /* cleaning flag */
 
         tst.l   0xa10008
         bne.s   SkipJoyDetect
@@ -236,7 +236,7 @@ _HINT:
         rte
 
 _VINT:
-        cmpi.b  #0xCC, 0x088FFF
+        cmpi.b  #0xCC, 0x08FFFF
         bne.s   _next_init_cc
 
         movem.l %d0-%d1/%a0-%a1, -(%sp)
