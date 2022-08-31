@@ -259,8 +259,8 @@ void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() /
     }
     for (u32 i = 0; i < maxcode; i++)
     {
-        *(maxcode * 3 + address + i * 2) = 0x0040;
-        *(maxcode * 3 + address + i * 2) = tblstat[i];
+        *(maxcode * 4 + address + i * 2) = 0x0040;
+        *(maxcode * 4 + address + i * 2) = tblstat[i];
         status = *control;
         status = status & 0x80;
         while (status == 0)
@@ -293,7 +293,7 @@ void Backup_Load()
             for (u32 i = 0; i < maxcode; i++)
                 tbldata[i] = (u8) * (maxcode * 2 + address + i * 2);
             for (u32 i = 0; i < maxcode; i++)
-                tblstat[i] = (u8) * (maxcode * 3 + address + i * 2);
+                tblstat[i] = (u8) * (maxcode * 4 + address + i * 2);
             break;
         }
     }
