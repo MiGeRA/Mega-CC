@@ -273,7 +273,7 @@ _next_code:
         move.b  (%a1), %d0 
         cmp.b   (%a0), %d0
         bne.s   _prep_next
-        ori.b   #0x01, 0xFA(%a0)            /* set low-bit at address (%a0 - 0x06) */
+        ori.b   #0x01, 0xFFFFFFFA(%a0)      /* set low-bit at address (%a0 - 0x06) */
 _do_freeze:        
         move.b  (%a0), (%a1)
 _prep_next:        
