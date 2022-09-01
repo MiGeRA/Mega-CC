@@ -105,11 +105,30 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
 
         if (state & BUTTON_C)
         {
-            tblstat[ym] = tblstat[ym] ? 0 : 0xFF;
-            if (tblstat[ym] == 0)
+            /*
+            tblstat[ym] = !(tblstat[ym]) ? 0xFF : (~(tblstat[ym]) ? 0xFE : 0x00); // Compliller not know it?
+            if (tblstat[ym] == 0x00)
                 VDP_drawText(" ", posx + 11, posy + ym);
-            else
+            else if (tblstat[ym] == 0xFF)
                 VDP_drawText("*", posx + 11, posy + ym);
+            else if (tblstat[ym] == 0xFE)
+                VDP_drawText("!", posx + 11, posy + ym);
+            */
+            if (tblstat[ym] == 0x00) // goto - 0xFF
+            {
+                tblstat[ym] = 0xFF;
+                VDP_drawText("*", posx + 11, posy + ym);
+            }
+            else if (tblstat[ym] == 0xFF) // goto - 0xFE
+            {
+                tblstat[ym] = 0xFE;
+                VDP_drawText("!", posx + 11, posy + ym);
+            }
+            else if (tblstat[ym] == 0xFE) // goto - 0x00
+            {
+                tblstat[ym] = 0x00;
+                VDP_drawText(" ", posx + 11, posy + ym);
+            }
         }
 
         if (state & BUTTON_START)
@@ -315,7 +334,7 @@ int main(bool hardReset)
     VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
     // VDP_setPalette(PAL0, custom_font.palette->data); // ... and set the pallete from font file
 
-    VDP_drawText("MEGA-CC OSP: VERSION 1.2", 0, 0);
+    VDP_drawText("MEGA-CC OSP: VERSION 1.3", 0, 0);
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
@@ -439,8 +458,10 @@ void Print_Code_Table(u8 x, u8 y)
         VDP_drawText(" [", x + 9, y + i);
         if (tblstat[i] == 0)
             VDP_drawText(" ", x + 11, y + i);
-        else
+        else if (tblstat[i] == 0xFF)
             VDP_drawText("*", x + 11, y + i);
+        else if (tblstat[i] == 0xFE)
+            VDP_drawText("!", x + 11, y + i);
         VDP_drawText("]", x + 12, y + i);
     }
 }

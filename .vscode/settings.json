@@ -9,6 +9,7 @@
     "GDK": "%GDK_WIN%",
     "files.associations": {
         "genesis.h": "c",
-        "hexout.h": "c"
+        "hexout.h": "c",
+        "ccram.h": "c"
     }
 }

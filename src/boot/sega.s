@@ -255,6 +255,8 @@ _wait_stop:
         bne.s   _back_to_game
         addi.b  #1, (%a0)
         addq.l  #2, %a0
+        tst.b   (%a0)
+        beq.s   _back_to_game
 _next_code:
         moveq   #0, %d0
         move.b  (%a0), %d0
@@ -266,7 +268,15 @@ _next_code:
         move.b  (%a0), %d0
         addq.l  #2, %a0
         move.l  %d0, %a1
+        btst.l  #16, %d0
+        bne.s   _do_freeze        
+        move.b  (%a1), %d0 
+        cmp.b   (%a0), %d0
+        bne.s   _prep_next
+        ori.b   #0x01, 0xFA(%a0)            /* set low-bit at address (%a0 - 0x06) */
+_do_freeze:        
         move.b  (%a0), (%a1)
+_prep_next:        
         addq.l  #2, %a0
         tst.b   (%a0)
         bne.s   _next_code
