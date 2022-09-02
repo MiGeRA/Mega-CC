@@ -19,7 +19,7 @@ static u8 CCRAM_Init();
 
 u16 tbladdr[maxcode]; // array of address part of "code"
 u8 tbldata[maxcode];  // array of data part of "code"
-u8 tblstat[maxcode];  // array of status part of "code" and primus byte of address
+u8 tblstat[maxcode];  // array of status part of "code" and (aka) primus byte of address
 
 u8 xm = 0; // x-position of menu cursor
 u8 ym = 0; // y-position of menu cursor
@@ -84,7 +84,7 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
             tblstat[ym] = 0;
             Print_Code_Table(posx, posy);
         }
-        else if (state & BUTTON_A)
+        else if (state & changed & BUTTON_A)
         {
             if (xm < 4)
                 tbladdr[ym] = tbladdr[ym] + (0x1000 >> (xm * 4));
@@ -93,7 +93,7 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
             tblstat[ym] = 0xFF;
             Print_Code_Table(posx, posy);
         }
-        else if (state & BUTTON_B)
+        else if (state & changed & BUTTON_B)
         {
             if (xm < 4)
                 tbladdr[ym] = tbladdr[ym] - (0x1000 >> (xm * 4));
@@ -229,70 +229,71 @@ void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() /
     address = 0x020000; // first address of BLOCK to erase|write
     control = 0x020001; // low part of this BLOCK for get status-flag
 
+    *control = 0x50; // clear status bites
     *control = 0x20; // 1-st ctrl byte for erase init
     *control = 0xD0; // 2-nd ctrl byte for erase init
     status = *control;
-    status = status & 0x80;
-    while (status == 0) // wait until completed ...
-    {
+    while ((status & 0x80) == 0) // wait until completed ...
         status = *control;
-        if (status & 0x08)
-            break; // Vpp is too low
-        if (status & 0x20)
-            break; // Erase error
-        status = status & 0x80;
-    }
-    *control = 0xFF;
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x20) // chech error ...
+        return;        // ... Erase error
 
     for (u32 i = 0; i < maxcode; i++)
     {
         *(address + i * 2) = 0x0040; // ctrl byte for write word
         *(address + i * 2) = tbladdr[i];
         status = *control;
-        status = status & 0x80;
-        while (status == 0)
-        {
+        while ((status & 0x80) == 0)
             status = *control;
-            if (status & 0x08)
-                break; // Vpp is too low
-            if (status & 0x10)
-                break; // Write error
-            status = status & 0x80;
-        }
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
     }
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
+
     for (u32 i = 0; i < maxcode; i++)
     {
-        *(maxcode * 2 + address + i * 2) = 0x0040;
+        *(maxcode * 2 + address + i * 2) = 0x0040; // ctrl byte for write word
         *(maxcode * 2 + address + i * 2) = tbldata[i];
         status = *control;
-        status = status & 0x80;
-        while (status == 0)
-        {
+        while ((status & 0x80) == 0)
             status = *control;
-            if (status & 0x08)
-                break;
-            if (status & 0x10)
-                break;
-            status = status & 0x80;
-        }
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
     }
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
+
     for (u32 i = 0; i < maxcode; i++)
     {
-        *(maxcode * 4 + address + i * 2) = 0x0040;
+        *(maxcode * 4 + address + i * 2) = 0x0040; // ctrl byte for write word
         *(maxcode * 4 + address + i * 2) = tblstat[i];
         status = *control;
-        status = status & 0x80;
-        while (status == 0)
-        {
+        while ((status & 0x80) == 0)
             status = *control;
-            if (status & 0x08)
-                break;
-            if (status & 0x10)
-                break;
-            status = status & 0x80;
-        }
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
     }
-    *control = 0xFF;
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
 
     Z80_releaseBus();
     SYS_enableInts();
