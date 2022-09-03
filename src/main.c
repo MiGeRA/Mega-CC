@@ -2,12 +2,12 @@
 #include "ccram.h"
 #include "hexout.h"
 #include "font.h"
+#include "asm.h"
 
+static void ever_VInt();
 static void Print_Code_Table(u8 x, u8 y);
 static void Print_Cursor_Position();
 static void Reprint_Cursor();
-static void ever_VInt();
-static u8 CCRAM_Init();
 
 // Params section
 
@@ -17,27 +17,27 @@ static u8 CCRAM_Init();
 
 // Declarations section - Global variable
 
-u16 tbladdr[maxcode]; // array of address part of "code"
-u8 tbldata[maxcode];  // array of data part of "code"
-u8 tblstat[maxcode];  // array of status part of "code" and (aka) primus byte of address
+volatile u16 tbladdr[maxcode]; // array of address part of "code"
+volatile u8 tbldata[maxcode];  // array of data part of "code"
+volatile u8 tblstat[maxcode];  // array of status part of "code" and (aka) primus byte of address
 
-u8 xm = 0; // x-position of menu cursor
-u8 ym = 0; // y-position of menu cursor
+volatile u8 xm = 0; // x-position of menu cursor
+volatile u8 ym = 0; // y-position of menu cursor
 
-u32 tick = 0;    // growing counter
-u8 mask = 0;     // time period flag
-u8 writable = 0; // flash-ROM presence flag
+volatile u32 tick = 0;    // growing counter
+volatile u8 mask = 0;     // time period flag
+volatile u8 writable = 0; // flash-ROM presence flag
 
-u16 flashMfg;   // flash-ROM manufacturer code
-u16 flashIdent; // flash-ROM device codeF
+volatile u16 flashMfg;   // flash-ROM manufacturer code
+volatile u16 flashIdent; // flash-ROM device codeF
 
-u16 *address; // pointer for data cell
-u8 *control;  // pointer for control reg. cell
-u8 status;    // variable for use taked status byte
+volatile u16 *address; // pointer for data cell
+volatile u8 *control;  // pointer for control reg. cell
+volatile u8 status;    // variable for use taked status byte
 
-u16 datbuff; // for debug
+volatile u16 datbuff; // for debug
 
-void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16 joy, u16 changed, u16 state)
+void Joy_Handler(u16 joy, u16 changed, u16 state)
 {
     if (joy == JOY_1)
     {
@@ -105,26 +105,17 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
 
         if (state & BUTTON_C)
         {
-            /*
-            tblstat[ym] = !(tblstat[ym]) ? 0xFF : (~(tblstat[ym]) ? 0xFE : 0x00); // Compliller not know it?
-            if (tblstat[ym] == 0x00)
-                VDP_drawText(" ", posx + 11, posy + ym);
-            else if (tblstat[ym] == 0xFF)
-                VDP_drawText("*", posx + 11, posy + ym);
-            else if (tblstat[ym] == 0xFE)
-                VDP_drawText("!", posx + 11, posy + ym);
-            */
-            if (tblstat[ym] == 0x00) // goto - 0xFF
+            if (tblstat[ym] == 0x00) // set now 0xFF
             {
                 tblstat[ym] = 0xFF;
                 VDP_drawText("*", posx + 11, posy + ym);
             }
-            else if (tblstat[ym] == 0xFF) // goto - 0xFE
+            else if (tblstat[ym] == 0xFF) // set now 0xFE
             {
                 tblstat[ym] = 0xFE;
                 VDP_drawText("!", posx + 11, posy + ym);
             }
-            else if (tblstat[ym] == 0xFE) // goto - 0x00
+            else if (tblstat[ym] == 0xFE) // set now 0x00
             {
                 tblstat[ym] = 0x00;
                 VDP_drawText(" ", posx + 11, posy + ym);
@@ -154,17 +145,6 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
             {
                 if (tblstat[i])
                 {
-                    /*
-                    // Pure C-code outdated construction - use in 1-st edition
-                    ccramwr(ramcnt, tblstat[i]); // primus adrress byte - 0xFF if code actived
-                    ramcnt++;
-                    ccramwr(ramcnt, (u8)((tbladdr[i] & 0xFF00) >> 8)); // hi address byte
-                    ramcnt++;
-                    ccramwr(ramcnt, (u8)(tbladdr[i] & 0x00FF)); // low address byte
-                    ramcnt++;
-                    ccramwr(ramcnt, tbldata[i]); // data byte
-                    ramcnt++;
-                    */
                     CCRAM_u8_wr(ramcnt, tblstat[i]); // primus adrress byte - 0xFF if code actived
                     ramcnt++;
                     CCRAM_u16_wr(ramcnt, tbladdr[i]); // address word
@@ -181,44 +161,39 @@ void __attribute__((noinline, used, longcall, section(".data"))) Joy_Handler(u16
             // Switch mapper to in-slot Cart
             *(u8 *)(0x3FFFFF) = 0xCC; // any random value
 
-            // Switch mapper to in-slot cart - alt variant
+            // Switch mapper to in-slot cart - alt (stock) variant
             /*
-            asm volatile("LEA   	0x00FF0000, %A5");
-            asm volatile("MOVEA.l	%A5, %A0");
-            asm volatile("MOVE.w	#0x2639, (%A5)+");
-            asm volatile("MOVE.l	#0x0003F0000, (%A5)+");
-            asm volatile("MOVE.w	#0x4EF9, (%A5)+");
-            asm volatile("MOVE.l	#0x00FF0000, (%A5)+");
-            asm volatile("JMP	    (%A0)");
+            asm volatile("lea   	0x00FF0000, %a5");
+            asm volatile("movea.l	%a5, %a0");
+            asm volatile("move.w	#0x2639, (%a5)+");
+            asm volatile("move.l	#0x0003F0000, (%a5)+");
+            asm volatile("move.w	#0x4EF9, (%a5)+");
+            asm volatile("move.l	#0x00FF0000, (%a5)+");
+            asm volatile("jmp	    (%a0)");
             */
         }
     }
 }
 
-void __attribute__((noinline, used, longcall, section(".data"))) getMfg() // In-RAM function
+u16 __attribute__((noinline, used, longcall, section(".data"))) getInfo(u16 *addr) // In-RAM function
 {
-    SYS_disableInts();
-    Z80_requestBus(TRUE);
-
-    *address = 0x0090;
-    flashMfg = *address;
-    *address = 0x00FF;
-
-    Z80_releaseBus();
-    SYS_enableInts();
-}
-
-void __attribute__((noinline, used, longcall, section(".data"))) getIdent() // In-RAM function
-{
-    SYS_disableInts();
-    Z80_requestBus(TRUE);
-
-    *address = 0x0090;
-    flashIdent = *address;
-    *address = 0x00FF;
-
-    Z80_releaseBus();
-    SYS_enableInts();
+    volatile u16 buff;
+    asm volatile("move %sr, %d1");            // SYS_disableInts(); ...
+    asm volatile("move #0x2700, %sr");        // ... Ok!
+    asm volatile("move.w #0x0100, 0xA11100"); // Z80_requestBus(TRUE); ...
+    asm volatile("move.w #0x0100, 0xA11200");
+    asm volatile("_ws: btst.b #0, 0xA11100"); // ... Ok!
+    asm volatile("bne.s _ws");
+    asm volatile("move #0xAA, 0x00AAAA"); // for other chips only ...
+    asm volatile("move #0x55, 0x005554"); // for other chips only ...
+    asm volatile("move #0x90, 0x00AAAA"); // for PA28Fxxx only this requare
+    asm volatile("move (%1), %0"
+                 : "=d"(buff)
+                 : "a"(addr));
+    asm volatile("move #0xFF, 0");           // back to read-mode
+    asm volatile("move.w #0x000, 0xA11100"); // Z80_releaseBus();
+    asm volatile("move %d1, %sr");           // SYS_enableInts();
+    return (buff);
 }
 
 void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() // In-RAM function
@@ -339,17 +314,15 @@ int main(bool hardReset)
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
-    if (!CCRAM_Init())
+    if (!CCRAM_init())
         VDP_drawText("CHECKED    ", 13, 1);
     else
         VDP_drawText("WITH ERRORS", 13, 1);
 
     VDP_drawText("MEGA-CC ROM: ", 0, 2);
 
-    address = 0x000000;
-    getMfg();
-    address = 0x000002;
-    getIdent();
+    flashMfg = getInfo(0);
+    flashIdent = getInfo(2);
 
     if (flashMfg == 0x0089)
     {
@@ -489,77 +462,4 @@ void Reprint_Cursor()
         else
             printhex8(tbldata[ym], 2, posx + 7, posy + ym);
     }
-}
-/*
-u8 ccramrd(u16 addr) // Pure C-code outdated construction - use in 1-st edition
-{
-    return (*(u8 *)(0x080000 + addr * 2 + 1));
-}
-
-void ccramwr(u16 addr, u8 data) // Pure C-code outdated construction - use in 1-st edition
-{
-    *(u8 *)(0x080000 + addr * 2 + 1) = data;
-}
-*/
-u8 CCRAM_Init()
-{
-    u8 err = 0;
-
-    // Varian 1 - Fast but large code space and not buatifull
-    /*
-    u16 *baseaddr;
-    baseaddr = 0x080000;
-    for (u16 i = 0; i < 32768; i++)
-        *(baseaddr + i) = 0x5A;
-    for (u16 i = 0; i < 32768; i++)
-        if ((*(baseaddr + i) & 0x00FF) != 0x5A)
-            err++;
-
-    if (err)
-        return (err);
-
-    for (u16 i = 0; i < 32768; i++)
-        *(baseaddr + i) = 0;
-    for (u16 i = 0; i < 32768; i++)
-        if ((*(baseaddr + i) & 0x00FF) != 0)
-            err++;
-    */
-
-    // Varian 2 - A little prettier, but maybe a little slower
-    /*
-    u8 *baseaddr;
-    baseaddr = 0x080000;
-    for (u16 i = 0; i < 32768; i++)
-        *(baseaddr + (i * 2) + 1) = 0x5A;
-    for (u16 i = 0; i < 32768; i++)
-        if (*(baseaddr + (i * 2) + 1) != 0x5A)
-            err++;
-
-    if (err)
-        return (err);
-
-    for (u16 i = 0; i < 32768; i++)
-        *(baseaddr + (i * 2) + 1) = 0x00;
-    for (u16 i = 0; i < 32768; i++)
-        if (*(baseaddr + (i * 2) + 1) != 0x00)
-            err++;
-    */
-
-    // Variant 3- It looks not bad, but the speed may not be the best
-    for (u16 i = 0; i < 32768; i++)
-        CCRAM_u8_wr(i, 0x5A);
-    for (u16 i = 0; i < 32768; i++)
-        if (CCRAM_u8_rd(i) != 0x5A)
-            err++;
-
-    if (err)
-        return (err);
-
-    for (u16 i = 0; i < 32768; i++)
-        CCRAM_u8_wr(i, 0);
-    for (u16 i = 0; i < 32768; i++)
-        if (CCRAM_u8_rd(i) != 0)
-            err++;
-
-    return (err);
 }

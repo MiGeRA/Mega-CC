@@ -237,8 +237,10 @@ _HINT:
 
 _VINT:
         cmpi.b  #0xCC, 0x08FFFF
-        bne.s   _next_init_cc
+        beq.s   _patcher
+        jmp     _next_init_cc
 
+_patcher:
         movem.l %d0-%d1/%a0-%a1, -(%sp)
         move    %sr, %d1
         move    #0x2700, %sr
@@ -253,6 +255,7 @@ _wait_stop:
         subi.b  #1, (%a0)
         tst.b   (%a0)
         bne.s   _back_to_game
+*        jmp     _testpoint                  /* for debug only! */
         addi.b  #1, (%a0)
         addq.l  #2, %a0
         tst.b   (%a0)
@@ -307,3 +310,14 @@ _no_bmp_task:
         andi.w  #0xFFFE, intTrace           /* out V-Int */
         movem.l (%sp)+, %d0-%d7/%a0-%a6
         rte
+
+_testpoint:
+        move.b  #0x00, 0x08FFFF
+        move.b  #0xCC, 0x3FFFFF
+*        sub.l   %a0, %a0
+*        move.l  %a0, %usp
+*        move.l  (%a0)+, %a7
+*        move.l  (%a0), %a0
+*        jmp     (%a0)
+*        reset
+        jmp      _reset_entry
