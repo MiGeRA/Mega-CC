@@ -1,6 +1,30 @@
 
 #include "asm_mac.i"
 
+| extern u16 CCRAM_Init(u32 fill);
+func CCRAM_Init
+    move.l  4(%sp), %d1
+    lea     0x080000, %a0
+_yet_wr:    
+    movep.l %d1, 1(%a0)
+    addq.l  #8, %a0
+    cmpa.l  #0x090000, %a0
+    bne     _yet_wr
+    
+    sub.l   %d0, %d0
+    move.l  %d1, %a1
+    lea     0x080000, %a0
+_yet_rd:    
+    movep.l 1(%a0), %d1
+    addq.l  #8, %a0
+    cmpa.l  %d1, %a1
+    beq     _no_err
+    addq    #1, %d0
+_no_err:
+    cmpa.l   #0x090000, %a0
+    bne     _yet_rd
+    rts
+
 | extern u16 CCRAM_u16_rd(u32 offset);
 func CCRAM_u16_rd
     move.l  4(%sp),%d1

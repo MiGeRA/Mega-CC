@@ -1,5 +1,6 @@
 #include <genesis.h>
 #include "ccram.h"
+#include "ccrom.h"
 #include "hexout.h"
 #include "font.h"
 #include "asm.h"
@@ -175,27 +176,6 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
     }
 }
 
-u16 __attribute__((noinline, used, longcall, section(".data"))) getInfo(u16 *addr) // In-RAM function
-{
-    volatile u16 buff;
-    asm volatile("move %sr, %d1");            // SYS_disableInts(); ...
-    asm volatile("move #0x2700, %sr");        // ... Ok!
-    asm volatile("move.w #0x0100, 0xA11100"); // Z80_requestBus(TRUE); ...
-    asm volatile("move.w #0x0100, 0xA11200");
-    asm volatile("_ws: btst.b #0, 0xA11100"); // ... Ok!
-    asm volatile("bne.s _ws");
-    asm volatile("move #0xAA, 0x00AAAA"); // for other chips only ...
-    asm volatile("move #0x55, 0x005554"); // for other chips only ...
-    asm volatile("move #0x90, 0x00AAAA"); // for PA28Fxxx only this requare
-    asm volatile("move (%1), %0"
-                 : "=d"(buff)
-                 : "a"(addr));
-    asm volatile("move #0xFF, 0");           // back to read-mode
-    asm volatile("move.w #0x000, 0xA11100"); // Z80_releaseBus();
-    asm volatile("move %d1, %sr");           // SYS_enableInts();
-    return (buff);
-}
-
 void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() // In-RAM function
 {
     SYS_disableInts();
@@ -314,15 +294,15 @@ int main(bool hardReset)
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
-    if (!CCRAM_init())
+    if (!CCRAM_Init(0xA5A5A5A5) && !CCRAM_Init(0x5A5A5A5A) && !CCRAM_Init(0x00000000))
         VDP_drawText("CHECKED    ", 13, 1);
     else
         VDP_drawText("WITH ERRORS", 13, 1);
 
     VDP_drawText("MEGA-CC ROM: ", 0, 2);
 
-    flashMfg = getInfo(0);
-    flashIdent = getInfo(2);
+    flashMfg = CCROM_Info(0);
+    flashIdent = CCROM_Info(2);
 
     if (flashMfg == 0x0089)
     {

@@ -9,6 +9,6 @@ u32 CCRAM_u32_rd(u32 offset);
 void CCRAM_u8_wr(u32 offset, u8 val);
 void CCRAM_u16_wr(u32 offset, u16 val);
 void CCRAM_u32_wr(u32 offset, u32 val);
-u8 CCRAM_init();
+u16 CCRAM_Init(u32 fill);
 
 #endif // _CCRAM_H_
