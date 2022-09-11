@@ -290,7 +290,7 @@ int main(bool hardReset)
     VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
     // VDP_setPalette(PAL0, custom_font.palette->data); // ... and set the pallete from font file
 
-    VDP_drawText("MEGA-CC OSP: VERSION 1.3", 0, 0);
+    VDP_drawText("MEGA-CC OSP: VERSION 1.4", 0, 0);
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
 
     VDP_drawText("INITING ...", 13, 1);
