@@ -1,0 +1,152 @@
+MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+MAKEFILE_DIR := $(subst \,/,$(MAKEFILE_DIR))
+
+ifneq ("$(wildcard $(MAKEFILE_DIR)bin/rescomp.jar)","")
+    GDK := $(patsubst %/,%,$(MAKEFILE_DIR))
+endif
+
+BIN := $(GDK)/bin
+LIB := $(GDK)/lib
+
+SRC_LIB := $(GDK)/src
+RES_LIB := $(GDK)/res
+INCLUDE_LIB := $(GDK)/inc
+
+ifeq ($(OS),Windows_NT)
+	SHELL := $(BIN)/sh.exe
+	RM := $(BIN)/rm.exe
+	CP := $(BIN)/cp.exe
+	MKDIR := $(BIN)/mkdir.exe
+
+	AR := $(BIN)/ar.exe
+	CC := $(BIN)/gcc.exe
+	OBJCPY := $(BIN)/objcopy.exe
+	ASMZ80 := $(BIN)/sjasm.exe
+	BINTOS := $(BIN)/bintos.exe
+else
+	SHELL = sh
+	RM = rm
+	CP = cp
+	MKDIR = mkdir
+
+	AR := $(BIN)/ar
+	CC := $(BIN)/gcc
+	OBJCPY := $(BIN)/objcopy
+	ASMZ80 := $(BIN)/sjasm
+	BINTOS := $(BIN)/bintos
+endif
+
+JAVA := java
+ECHO := echo
+SIZEBND := $(JAVA) -Xmx1024m -jar $(BIN)/sizebnd.jar
+RESCOMP := $(JAVA) -Xmx1024m -jar $(BIN)/rescomp.jar
+
+SRC_LIB_C := $(wildcard $(SRC_LIB)/*.c)
+SRC_LIB_S := $(wildcard $(SRC_LIB)/*.s)
+SRC_LIB_S80 := $(wildcard $(SRC_LIB)/*.s80)
+
+RES_LIB_RES := $(wildcard $(RES_LIB)/*.res)
+
+OBJ_LIB = $(RES_LIB_RES:.res=.o)
+OBJ_LIB += $(SRC_LIB_S80:.s80=.o)
+OBJ_LIB += $(SRC_LIB_S:.s=.o)
+OBJ_LIB += $(SRC_LIB_C:.c=.o)
+
+DEP_LIB := $(OBJ_LIB:.o=.d)
+
+-include $(DEP_LIB)
+
+LST_LIB := $(SRC_LIB_C:.c=.lst)
+
+INCS_LIB := -I$(INCLUDE_LIB) -I$(SRC_LIB) -I$(RES_LIB)
+DEFAULT_FLAGS_LIB := $(EXTRA_FLAGS) -DSGDK_GCC -m68000 -Wall -Wextra -Wno-shift-negative-value -Wno-unused-parameter -fno-builtin $(INCS_LIB) -B$(BIN)
+FLAGSZ80_LIB := -i$(SRC_LIB) -i$(INCLUDE_LIB)
+
+
+#release: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -Os -fomit-frame-pointer -fuse-linker-plugin -flto
+#release: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -O3 -fuse-linker-plugin -fno-web -fno-gcse -fno-unit-at-a-time -fomit-frame-pointer -flto
+#release: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -O2 -fuse-linker-plugin -fno-web -fno-gcse -fno-unit-at-a-time -fomit-frame-pointer -flto -ffunction-sections -Wl,--gc-sections -fno-asynchronous-unwind-tables -Wl,--strip-all
+#release: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -Os -fuse-linker-plugin -ffunction-sections -Wl,--gc-sections -fno-asynchronous-unwind-tables -Wl,--strip-all
+release: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -Os -fuse-linker-plugin -flto
+release: $(LIB)/libmd.a
+
+debug: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -O1 -ggdb -DDEBUG=1
+debug: $(LIB)/libmd_debug.a
+
+asm: FLAGS_LIB= $(DEFAULT_FLAGS_LIB) -Os -fuse-linker-plugin -fno-web -fno-gcse -fno-unit-at-a-time -fomit-frame-pointer -S
+asm: $(LST_LIB)
+
+
+all: release
+default: release
+
+Default: release
+Debug: debug
+Release: release
+Asm: asm
+
+.PHONY: clean
+
+
+cleanlst:
+	$(RM) -f $(LST_LIB)
+
+cleandep:
+	$(RM) -f $(DEP_LIB)
+
+cleanobj:
+	$(RM) -f $(OBJ_LIB)
+
+cleanrelease: cleanobj cleandep cleanlst
+	$(RM) -f $(LIB)/libmd.a out.lst cmd_
+
+cleandebug: cleanobj cleandep cleanlst
+	$(RM) -f $(LIB)/libmd_debug.a out.lst cmd_
+
+cleanasm: cleanlst
+
+clean: cleanobj cleandep cleanlst
+	$(RM) -f $(LIB)/libmd.a $(LIB)/libmd_debug.a out.lst cmd_
+
+cleanall: clean
+cleanAll: clean
+cleandefault: clean
+cleanDefault: clean
+
+cleanRelease: cleanrelease
+cleanDebug: cleandebug
+cleanAsm: cleanasm
+
+
+$(LIB)/libmd.a: cmd_
+	$(AR) rs $(LIB)/libmd.a --plugin=liblto_plugin-0.dll @cmd_
+	$(RM) cmd_
+
+$(LIB)/libmd_debug.a: cmd_
+	$(AR) rs $(LIB)/libmd_debug.a --plugin=liblto_plugin-0.dll @cmd_
+	$(RM) cmd_
+
+cmd_ : $(OBJ_LIB)
+	$(ECHO) "$(OBJ_LIB)" > cmd_
+
+
+%.lst: %.c
+	$(CC) $(FLAGS_LIB) -c $< -o $@
+
+%.o: %.c
+	$(CC) $(FLAGS_LIB) -MMD -c $< -o $@
+
+%.o: %.s
+	$(CC) -x assembler-with-cpp -MMD $(FLAGS_LIB) -c $< -o $@
+
+%.o: %.rs
+	$(CC) -x assembler-with-cpp $(FLAGS_LIB) -c $*.rs -o $@
+
+%.rs: %.res
+	$(RESCOMP) $*.res $*.rs -dep $*.o
+
+%.o80: %.s80
+	$(ASMZ80) $(FLAGSZ80_LIB) $< $@ out.lst
+
+%.s: %.o80
+	$(BINTOS) $<
