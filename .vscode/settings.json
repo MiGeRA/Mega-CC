@@ -2,8 +2,8 @@
     "C_Cpp.default.includePath": [
         "${env:GDK}\\inc",
         "${env:GDK}\\res",
-        "res",
-        "inc"
+        "inc",
+        "res"
     ],
     "gens.path": "C:\\Games\\Gens\\gens.exe",
     "GDK": "%GDK_WIN%",

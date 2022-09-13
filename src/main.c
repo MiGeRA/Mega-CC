@@ -1,13 +1,12 @@
 #include <genesis.h>
+#include "resources.h"
+#include "hexout.h"
 #include "ccram.h"
 #include "ccrom.h"
-#include "hexout.h"
-#include "font.h"
-#include "asm.h"
 
 static void ever_VInt();
 static void Print_Code_Table(u8 x, u8 y);
-static void Print_Cursor_Position();
+// static void Print_Cursor_Position();
 static void Reprint_Cursor();
 
 // Params section
@@ -37,6 +36,104 @@ volatile u8 *control;  // pointer for control reg. cell
 volatile u8 status;    // variable for use taked status byte
 
 volatile u16 datbuff; // for debug
+
+void __attribute__((noinline, used, section(".data"))) Backup_Save() // In-RAM function
+{
+    SYS_disableInts();
+    Z80_requestBus(TRUE);
+
+    address = (u16 *)0x020000; // first address of BLOCK to erase|write
+    control = (u8 *)0x020001;  // low part of this BLOCK for get status-flag
+
+    *control = 0x50; // clear status bites
+    *control = 0x20; // 1-st ctrl byte for erase init
+    *control = 0xD0; // 2-nd ctrl byte for erase init
+    status = *control;
+    while ((status & 0x80) == 0) // wait until completed ...
+        status = *control;
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x20) // chech error ...
+        return;        // ... Erase error
+
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(address + i * 2) = 0x0040; // ctrl byte for write word
+        *(address + i * 2) = tbladdr[i];
+        status = *control;
+        while ((status & 0x80) == 0)
+            status = *control;
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
+    }
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
+
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(maxcode * 2 + address + i * 2) = 0x0040; // ctrl byte for write word
+        *(maxcode * 2 + address + i * 2) = tbldata[i];
+        status = *control;
+        while ((status & 0x80) == 0)
+            status = *control;
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
+    }
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
+
+    for (u32 i = 0; i < maxcode; i++)
+    {
+        *(maxcode * 4 + address + i * 2) = 0x0040; // ctrl byte for write word
+        *(maxcode * 4 + address + i * 2) = tblstat[i];
+        status = *control;
+        while ((status & 0x80) == 0)
+            status = *control;
+        if (status & 0x08)
+            break; // Vpp is too low
+        if (status & 0x10)
+            break; // Write error
+    }
+    *control = 0xFF;   // back to read-mode
+    if (status & 0x08) // chech error ...
+        return;        // ... Vpp is too low
+    if (status & 0x10) // chech error ...
+        return;        // ... Write error
+
+    Z80_releaseBus();
+    SYS_enableInts();
+}
+
+void Backup_Load()
+{
+    address = (u16 *)0x020000;
+
+    for (u32 i = 0; i < maxcode * 3; i++)
+    {
+        if (*(address + i * 2) != 0xFFFF) // Check area for cleanliness
+        {
+            // If exist data - load it
+            for (u32 i = 0; i < maxcode; i++)
+                tbladdr[i] = *(address + i * 2);
+            for (u32 i = 0; i < maxcode; i++)
+                tbldata[i] = (u8) * (maxcode * 2 + address + i * 2);
+            for (u32 i = 0; i < maxcode; i++)
+                tblstat[i] = (u8) * (maxcode * 4 + address + i * 2);
+            break;
+        }
+    }
+}
 
 void Joy_Handler(u16 joy, u16 changed, u16 state)
 {
@@ -176,109 +273,11 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
     }
 }
 
-void __attribute__((noinline, used, longcall, section(".data"))) Backup_Save() // In-RAM function
-{
-    SYS_disableInts();
-    Z80_requestBus(TRUE);
-
-    address = 0x020000; // first address of BLOCK to erase|write
-    control = 0x020001; // low part of this BLOCK for get status-flag
-
-    *control = 0x50; // clear status bites
-    *control = 0x20; // 1-st ctrl byte for erase init
-    *control = 0xD0; // 2-nd ctrl byte for erase init
-    status = *control;
-    while ((status & 0x80) == 0) // wait until completed ...
-        status = *control;
-    *control = 0xFF;   // back to read-mode
-    if (status & 0x08) // chech error ...
-        return;        // ... Vpp is too low
-    if (status & 0x20) // chech error ...
-        return;        // ... Erase error
-
-    for (u32 i = 0; i < maxcode; i++)
-    {
-        *(address + i * 2) = 0x0040; // ctrl byte for write word
-        *(address + i * 2) = tbladdr[i];
-        status = *control;
-        while ((status & 0x80) == 0)
-            status = *control;
-        if (status & 0x08)
-            break; // Vpp is too low
-        if (status & 0x10)
-            break; // Write error
-    }
-    *control = 0xFF;   // back to read-mode
-    if (status & 0x08) // chech error ...
-        return;        // ... Vpp is too low
-    if (status & 0x10) // chech error ...
-        return;        // ... Write error
-
-    for (u32 i = 0; i < maxcode; i++)
-    {
-        *(maxcode * 2 + address + i * 2) = 0x0040; // ctrl byte for write word
-        *(maxcode * 2 + address + i * 2) = tbldata[i];
-        status = *control;
-        while ((status & 0x80) == 0)
-            status = *control;
-        if (status & 0x08)
-            break; // Vpp is too low
-        if (status & 0x10)
-            break; // Write error
-    }
-    *control = 0xFF;   // back to read-mode
-    if (status & 0x08) // chech error ...
-        return;        // ... Vpp is too low
-    if (status & 0x10) // chech error ...
-        return;        // ... Write error
-
-    for (u32 i = 0; i < maxcode; i++)
-    {
-        *(maxcode * 4 + address + i * 2) = 0x0040; // ctrl byte for write word
-        *(maxcode * 4 + address + i * 2) = tblstat[i];
-        status = *control;
-        while ((status & 0x80) == 0)
-            status = *control;
-        if (status & 0x08)
-            break; // Vpp is too low
-        if (status & 0x10)
-            break; // Write error
-    }
-    *control = 0xFF;   // back to read-mode
-    if (status & 0x08) // chech error ...
-        return;        // ... Vpp is too low
-    if (status & 0x10) // chech error ...
-        return;        // ... Write error
-
-    Z80_releaseBus();
-    SYS_enableInts();
-}
-
-void Backup_Load()
-{
-    address = 0x020000;
-
-    for (u32 i = 0; i < maxcode * 3; i++)
-    {
-        if (*(address + i * 2) != 0xFFFF) // Check area for cleanliness
-        {
-            // If exist data - load it
-            for (u32 i = 0; i < maxcode; i++)
-                tbladdr[i] = *(address + i * 2);
-            for (u32 i = 0; i < maxcode; i++)
-                tbldata[i] = (u8) * (maxcode * 2 + address + i * 2);
-            for (u32 i = 0; i < maxcode; i++)
-                tblstat[i] = (u8) * (maxcode * 4 + address + i * 2);
-            break;
-        }
-    }
-}
-
 int main(bool hardReset)
 {
     JOY_init();
     JOY_setEventHandler(&Joy_Handler);
-    // SYS_setVIntCallback(ever_VInt);
+    SYS_setVIntCallback(ever_VInt);
 
     VDP_setScreenWidth320();
     VDP_setHInterrupt(0);
@@ -287,8 +286,8 @@ int main(bool hardReset)
     VDP_setPaletteColor(0, 0x000000); // Black
     VDP_setPaletteColor(1, 0xF0);     // Green
 
-    VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
     // VDP_setPalette(PAL0, custom_font.palette->data); // ... and set the pallete from font file
+    VDP_loadFont(custom_font.tileset, DMA); // Load the custom font ...
 
     VDP_drawText("MEGA-CC OSP: VERSION 1.4", 0, 0);
     VDP_drawText("MEGA-CC RAM: ", 0, 1);
@@ -301,8 +300,8 @@ int main(bool hardReset)
 
     VDP_drawText("MEGA-CC ROM: ", 0, 2);
 
-    flashMfg = CCROM_Info(0);
-    flashIdent = CCROM_Info(2);
+    flashMfg = CCROM_Info((u16 *)0);
+    flashIdent = CCROM_Info((u16 *)2);
 
     if (flashMfg == 0x0089)
     {
@@ -419,13 +418,13 @@ void Print_Code_Table(u8 x, u8 y)
         VDP_drawText("]", x + 12, y + i);
     }
 }
-
+/*
 void Print_Cursor_Position() // debug feature
 {
     printhex8(xm, 2, 36, 0);
     printhex8(ym, 2, 38, 0);
 }
-
+*/
 void Reprint_Cursor()
 {
     if (mask)

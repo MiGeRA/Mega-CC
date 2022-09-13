@@ -9,5 +9,5 @@ out/src/main.o: src/main.c C:/SGDK/inc/genesis.h C:/SGDK/inc/types.h \
  C:/SGDK/inc/vdp_spr.h C:/SGDK/inc/vdp_pal.h C:/SGDK/inc/vram.h \
  C:/SGDK/inc/sprite_eng.h C:/SGDK/inc/sound.h C:/SGDK/inc/xgm.h \
  C:/SGDK/inc/z80_ctrl.h C:/SGDK/inc/ym2612.h C:/SGDK/inc/psg.h \
- C:/SGDK/inc/joy.h C:/SGDK/inc/timer.h src/ccram.h src/ccrom.h \
- src/hexout.h res/font.h C:/SGDK/inc/asm.h
+ C:/SGDK/inc/joy.h C:/SGDK/inc/timer.h res/resources.h src/hexout.h \
+ src/ccram.h src/ccrom.h
