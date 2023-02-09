@@ -139,7 +139,8 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
 {
     if (joy == JOY_1)
     {
-        if (writable & ((BUTTON_DIR) == (state & (BUTTON_DIR))))
+        // if (writable & ((BUTTON_DIR) == (state & (BUTTON_DIR))))
+        if ((writable & ((BUTTON_DIR) == (state & (BUTTON_DIR)))) || (writable & ((BUTTON_UP | BUTTON_START) == (state & (BUTTON_UP | BUTTON_START)))))
         {
             VDP_drawText("WRITING ... ", 0, 4);
             Backup_Save();
@@ -153,6 +154,7 @@ void Joy_Handler(u16 joy, u16 changed, u16 state)
                 VDP_drawText("OK!         ", 0, 4);
             Backup_Load();
             Print_Code_Table(posx, posy);
+            return;
         }
         if (state & BUTTON_UP)
         {
@@ -337,7 +339,7 @@ int main(bool hardReset)
     VDP_drawText("START - TO RUN PROGRAM FROM IN-SLOT CART", 0, 23);
     if (writable)
     {
-        VDP_drawText("CENTER D-PAD - TO SAVE CODE-TABLE IN R0M", 0, 24);
+        VDP_drawText("UP + START - TO SAVE CODE-TABLE IN R0M", 0, 24);
         VDP_drawText("A + B - TO CLEAN CURRENT STRING OF CODE", 0, 25);
     }
     else
